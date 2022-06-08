@@ -1,0 +1,124 @@
+# This workflow will build and deploy a MuleSoft project
+
+name: MuleSoft deployment with GitHub Actions CI
+
+# Controls when the action will run.
+
+on:
+  push:
+    branches: [ develop ]
+    
+  #Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+  
+env:
+  CI: true
+
+# A workflow run is made up of one or more jobs
+
+jobs:
+  build:
+    runs-on: self-hosted-runner
+    steps:
+    - uses: actions/checkout@v2
+    
+        
+    - name: Set up JDK 8
+      uses: actions/setup-java@v1
+      with:
+        java-version: 8
+
+    - name : build
+      run: |
+        mvn -B package --file /home/jeweldev/actions-runner/_work/repo_name/repo_name/pom.xml
+    - name: Artifact file name with commit hash
+      run: |
+        artifactName1=$(ls /home/jeweldev/actions-runner/_work/repo_name/repo_name/target/*.jar | head -1)
+        commitHash=$(git rev-parse --short "$GITHUB_SHA")
+        artifactName2=$(ls /home/jeweldev/actions-runner/_work/repo_name/repo_name/target/*.jar | head -1 | sed "s/.jar/.$commitHash.jar/g")
+        mv $artifactName1 $artifactName2
+    - uses: actions/upload-artifact@master
+      with:
+          name: artifacts
+          path: /home/jeweldev/actions-runner/_work/repo_name/repo_name/target/*.jar
+          
+  Deploy:
+    needs: build
+    runs-on: self-hosted-runner
+    steps: 
+    - uses: actions/checkout@v2
+    
+  #  - uses: actions/cache@v1
+    #  with:
+      #  path: ~/.m2/repository
+      #  key: ${{ runner.os }}-maven-${{ hashFiles('/home/jeweldev/actions-runner/_work/repo_name/repo_name/pom.xml') }}
+       # restore-keys: |
+        #  ${{ runner.os }}-maven-
+        
+    - uses: actions/download-artifact@master
+      with:
+        name: artifacts
+    - name: Deploy to RTF
+      env:
+        USERNAME: ${{ secrets.ANYPOINT_USERNAME }}
+        PASSWORD: ${{ secrets.ANYPOINT_PASSWORD }}
+        ENVIRONMENT: ${{secrets.ENVIRONMENT }}
+        TARGET: ${{secrets.TARGET_DEV }}
+        SERVER: ${{secrets.SERVER }}
+        URI: ${{secrets.URI }}
+        PROVIDER: ${{secrets.PROVIDER }}
+        CLUSTERD: ${{secrets.CLUSTERD }}
+        CORES: ${{secrets.CORES }}
+        CPUMAX: ${{secrets.CPUMAX }}
+        MEMORY: ${{secrets.MEMORY }}
+        REPLICAS: ${{secrets.REPLICAS }}
+        MEMORYMAX: ${{secrets.MEMORYMAX }}
+        STRATEGY: ${{secrets.STRATEGY }}
+       
+      run: |
+        artifactName=$(ls /home/jeweldev/actions-runner/_work/repo_name/repo_name/*.jar | head -1)
+        #deploy the artifact to anypoint exchange
+        mvn deploy -Danypoint.server=$SERVER
+        #Take the artifact from anypoint exchange and deploy it in EKS cluster using RTF
+        mvn mule:deploy -Dmule.artifact=artifacts -Dusername=$USERNAME -Dpassword=$PASSWORD -Danypoint.env=$ENVIRONMENT -Danypoint.target=$TARGET -Danypoint.server=$SERVER -Danypoint.uri=$URI -Danypoint.provider=$PROVIDER -Danypoint.clusterd=$ClUSTERD -Danypoint.cores=$CORES -Danypoint.cpumax=$CPUMAX -Danypoint.memory=$MEMORY -Danypoint.memorymax=$MEMORYMAX -Danypoint.replicas=$REPLICAS -Danypoint.strategy=$STRATEGY 
+
+  QA:
+    name: QA-Deployment
+    runs-on: sel-hosted-runner
+    environment: QA
+
+    needs:
+      - Deploy
+    steps: 
+    - uses: actions/checkout@v2
+    
+    - uses: actions/cache@v1
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('/home/jeweldev/actions-runner/_work/jb-deposits-transactions-mule-papi/jb-deposits-transactions-mule-papi/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+          
+    - uses: actions/download-artifact@master
+      with:
+        name: artifacts
+    - name: Deploy to QA
+      env:
+        USERNAME: ${{ secrets.ANYPOINT_USERNAME }}
+        PASSWORD: ${{ secrets.ANYPOINT_PASSWORD }}
+        ENVIRONMENT: ${{ secrets.ENVIRONMENT }}
+        TARGET: ${{ secrets.TARGET_QA }}
+        SERVER: ${{ secrets.SERVER }}
+        URI: ${{ secrets.URI }}
+        PROVIDER: ${{ secrets.PROVIDER }}
+        CLUSTERD: ${{ secrets.CLUSTERD }}
+        CORES: ${{ secrets.CORES }}
+        CPUMAX: ${{ secrets.CPUMAX }}
+        MEMORY: ${{ secrets.MEMORY }}
+        REPLICAS: ${{ secrets.REPLICAS }}
+        MEMORYMAX: ${{ secrets.MEMORYMAX }}
+        STRATEGY: ${{ secrets.STRATEGY }}
+      run: |
+        artifactName=$(ls /home/jeweldev/actions-runner/_work/repo_name/repo_name/*.jar | head -1)
+        #Takes the artifact from anypoint exchange and deploys it in QA environment.
+        mvn mule:deploy -Dmule.artifact=artifacts -Dusername=$USERNAME -Dpassword=$PASSWORD -Danypoint.env=$ENVIRONMENT -Danypoint.target=$TARGET -Danypoint.server=$SERVER -Danypoint.uri=$URI -Danypoint.provider=$PROVIDER -Danypoint.clusterd=$ClUSTERD -Danypoint.cores=$CORES -Danypoint.cpumax=$CPUMAX -Danypoint.memory=$MEMORY -Danypoint.memorymax=$MEMORYMAX -Danypoint.replicas=$REPLICAS -Danypoint.strategy=$STRATEGY 
